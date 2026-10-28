@@ -18,7 +18,9 @@ Un PR cumple este aspecto si, en la versión revisada:
 1. cada cambio de comportamiento del diff tiene una prueba nueva o existente que lo ejercita;
 2. ninguna prueba queda desactivada, vacía o debilitada sin justificación;
 3. los umbrales de cobertura y los gates de calidad no se han reducido;
-4. el código modificado alcanza la meta de cobertura del 85 % cuando exista reporte.
+4. debe utilizar correctamente el patrón AAA (Arrange, Act, Assert) en las pruebas unitarias
+5. Todo unitTest utiliza CamelCase.
+6. el código modificado alcanza la meta de cobertura del 85 % cuando exista reporte.
 
 No evalúa seguridad ni compatibilidad de contratos; para eso están los otros revisores.
 
