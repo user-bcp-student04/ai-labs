@@ -19,6 +19,9 @@ import java.util.List;
 @ApplicationScoped
 public class LegacyDatabase {
     private static final String DB_URL = System.getenv().getOrDefault("AUTH_DB_URL", "jdbc:sqlite:./data/workshop.db");
+    private static final String STORAGE_COLUMN = "password_storage";
+    private static final String STORAGE_LEGACY = "LEGACY";
+    private static final String STORAGE_HASHED = "HASHED";
 
     @Inject
     PasswordHasher passwordHasher;
@@ -47,7 +50,50 @@ public class LegacyDatabase {
 
     private void createSchema(Connection connection) throws SQLException {
         try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate("CREATE TABLE IF NOT EXISTS legacy_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL)");
+            statement.executeUpdate("CREATE TABLE IF NOT EXISTS legacy_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT NOT NULL, display_name TEXT NOT NULL, role TEXT NOT NULL, password_storage TEXT NOT NULL DEFAULT '" + STORAGE_LEGACY + "')");
+        }
+        if (!hasColumn(connection, STORAGE_COLUMN)) {
+            addStorageColumn(connection);
+        }
+    }
+
+    private boolean hasColumn(Connection connection, String columnName) throws SQLException {
+        try (PreparedStatement columns = connection.prepareStatement("PRAGMA table_info(legacy_users)");
+             ResultSet result = columns.executeQuery()) {
+            while (result.next()) {
+                if (columnName.equals(result.getString("name"))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private void addStorageColumn(Connection connection) throws SQLException {
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate("ALTER TABLE legacy_users ADD COLUMN " + STORAGE_COLUMN
+                    + " TEXT NOT NULL DEFAULT '" + STORAGE_LEGACY + "'");
+        }
+        markExistingHashes(connection);
+    }
+
+    private void markExistingHashes(Connection connection) throws SQLException {
+        List<Long> hashedIds = new ArrayList<>();
+        try (PreparedStatement findPasswords = connection.prepareStatement("SELECT id, password FROM legacy_users");
+             ResultSet result = findPasswords.executeQuery()) {
+            while (result.next()) {
+                if (passwordHasher.isHashed(result.getString("password"))) {
+                    hashedIds.add(result.getLong("id"));
+                }
+            }
+        }
+        try (PreparedStatement markHashed = connection.prepareStatement(
+                "UPDATE legacy_users SET " + STORAGE_COLUMN + "=? WHERE id=?")) {
+            for (Long id : hashedIds) {
+                markHashed.setString(1, STORAGE_HASHED);
+                markHashed.setLong(2, id);
+                markHashed.executeUpdate();
+            }
         }
     }
 
@@ -76,10 +122,11 @@ public class LegacyDatabase {
     private void migrateLegacyPasswords(Connection connection) throws SQLException {
         List<LegacyPassword> legacyPasswords = findLegacyPasswords(connection);
         try (PreparedStatement updatePassword = connection.prepareStatement(
-                "UPDATE legacy_users SET password=? WHERE id=?")) {
+                "UPDATE legacy_users SET password=?, password_storage=? WHERE id=?")) {
             for (LegacyPassword legacyPassword : legacyPasswords) {
                 updatePassword.setString(1, passwordHasher.hash(legacyPassword.password()));
-                updatePassword.setLong(2, legacyPassword.id());
+                updatePassword.setString(2, STORAGE_HASHED);
+                updatePassword.setLong(3, legacyPassword.id());
                 updatePassword.executeUpdate();
             }
         }
@@ -88,12 +135,11 @@ public class LegacyDatabase {
     private List<LegacyPassword> findLegacyPasswords(Connection connection) throws SQLException {
         List<LegacyPassword> legacyPasswords = new ArrayList<>();
         try (PreparedStatement findPasswords = connection.prepareStatement(
-                "SELECT id, password FROM legacy_users");
-             ResultSet result = findPasswords.executeQuery()) {
-            while (result.next()) {
-                String password = result.getString("password");
-                if (!passwordHasher.isHashed(password)) {
-                    legacyPasswords.add(new LegacyPassword(result.getLong("id"), password));
+                "SELECT id, password FROM legacy_users WHERE " + STORAGE_COLUMN + "=?")) {
+            findPasswords.setString(1, STORAGE_LEGACY);
+            try (ResultSet result = findPasswords.executeQuery()) {
+                while (result.next()) {
+                    legacyPasswords.add(new LegacyPassword(result.getLong("id"), result.getString("password")));
                 }
             }
         }
