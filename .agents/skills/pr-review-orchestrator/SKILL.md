@@ -13,7 +13,8 @@ Cuando se pida revisar un PR del repositorio `user-bcp-student04/ai-labs` y la p
 
 | Entrada | Obligatoria | Valores |
 |---|---|---|
-| PR | sí | número o URL del PR en `user-bcp-student04/ai-labs` |
+| PR | sí | número del PR (por ejemplo `#24`) del repositorio `user-bcp-student04/ai-labs` |
+| repositorio | no | `owner/repo`; por defecto `user-bcp-student04/ai-labs` |
 | `aspectos` | sí | uno o más de: `pruebas`, `seguridad`, `compatibilidad` |
 
 Reglas de la entrada:
@@ -33,11 +34,12 @@ Reglas de la entrada:
 ## Procedimiento
 
 1. **Validar entrada.** Confirma PR y `aspectos`. Si falta algo, aplica la regla de `ask_user` de arriba.
-2. **Fijar versión.** Con `github-official` (`pull_request_read`) obtén el PR, base y cabeza. Registra SHA completos. Todos los revisores usarán estos mismos SHA.
-3. **Redirigir el trabajo.** Invoca únicamente el skill de cada aspecto indicado, uno por uno o en paralelo si el entorno lo permite. A cada uno pasa el número de PR y los mismos SHA base y cabeza.
-4. **Verificar consistencia.** Confirma que todos los revisores usaron los mismos SHA. Si el PR cambió durante la revisión o los SHA difieren, descarta los resultados y repite desde el paso 2.
-5. **Consolidar.** Une las observaciones de los aspectos solicitados en un único informe. Si dos revisores señalan la misma línea, agrúpalas y conserva la clasificación más conservadora (`RIESGO A CONFIRMAR` si una de las evidencias no es concluyente).
-6. **Entregar.** Presenta el informe local. No publiques comentarios ni reseñas.
+2. **Buscar el PR.** Con el MCP `github-official` (herramienta `pull_request_read`), busca el PR por número en el repositorio de la entrada. Confirma que existe y registra su estado. Si no se encuentra, detente e informa `BLOQUEADO` con la causa; no revises otro PR.
+3. **Fijar versión.** Del mismo PR, obtén base y cabeza. Registra SHA completos. Todos los revisores usarán estos mismos SHA.
+4. **Redirigir el trabajo.** Invoca únicamente el skill de cada aspecto indicado, uno por uno o en paralelo si el entorno lo permite. A cada uno pasa el número de PR y los mismos SHA base y cabeza.
+5. **Verificar consistencia.** Confirma que todos los revisores usaron los mismos SHA. Si el PR cambió durante la revisión o los SHA difieren, descarta los resultados y repite desde el paso 3.
+6. **Consolidar.** Une las observaciones de los aspectos solicitados en un único informe. Si dos revisores señalan la misma línea, agrúpalas y conserva la clasificación más conservadora (`RIESGO A CONFIRMAR` si una de las evidencias no es concluyente).
+7. **Entregar.** Presenta el informe local. No publiques comentarios ni reseñas.
 
 ## Reglas
 
