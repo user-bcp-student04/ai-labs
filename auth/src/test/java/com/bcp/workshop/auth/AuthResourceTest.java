@@ -269,6 +269,56 @@ class AuthResourceTest {
     }
 
     @Test
+    void migratesLegacyPlaintextPasswordThatLooksLikeHash() throws Exception {
+        String username = "legacy-hash-shaped-" + UUID.randomUUID();
+        String password = "$pbkdf2-sha256$210000$"
+                + Base64.getEncoder().encodeToString(new byte[16]) + "$"
+                + Base64.getEncoder().encodeToString(new byte[32]);
+        String dbUrl = System.getenv().getOrDefault("AUTH_DB_URL", "jdbc:sqlite:./data/workshop.db");
+
+        try (Connection connection = DriverManager.getConnection(dbUrl);
+             PreparedStatement insertUser = connection.prepareStatement(
+                     "INSERT INTO legacy_users(username,password,display_name,role) VALUES (?,?,?,?)")) {
+            insertUser.setString(1, username);
+            insertUser.setString(2, password);
+            insertUser.setString(3, "Legacy Hash-Shaped User");
+            insertUser.setString(4, "STUDENT");
+            insertUser.executeUpdate();
+        }
+
+        try {
+            database.initialize();
+
+            given()
+                    .contentType("application/json")
+                    .body("{\"username\":\"" + username + "\",\"password\":\"" + password + "\"}")
+                    .when().post("/auth/login")
+                    .then()
+                    .statusCode(200)
+                    .body("user.username", is(username));
+
+            try (Connection connection = DriverManager.getConnection(dbUrl);
+                 PreparedStatement findPassword = connection.prepareStatement(
+                         "SELECT password FROM legacy_users WHERE username=?")) {
+                findPassword.setString(1, username);
+                try (var storedPassword = findPassword.executeQuery()) {
+                    storedPassword.next();
+                    String storedHash = storedPassword.getString("password");
+                    assertFalse(storedHash.equals(password));
+                    assertTrue(passwordHasher.matches(password, storedHash));
+                }
+            }
+        } finally {
+            try (Connection connection = DriverManager.getConnection(dbUrl);
+                 PreparedStatement deleteUser = connection.prepareStatement(
+                         "DELETE FROM legacy_users WHERE username=?")) {
+                deleteUser.setString(1, username);
+                deleteUser.executeUpdate();
+            }
+        }
+    }
+
+    @Test
     void returnsGenericErrorWhenAuthenticationFails() {
         LegacyDatabase failingDatabase = new LegacyDatabase() {
             @Override
