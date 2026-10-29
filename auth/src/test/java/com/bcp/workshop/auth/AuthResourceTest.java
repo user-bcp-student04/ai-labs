@@ -13,13 +13,22 @@ import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.UUID;
+import java.util.logging.Handler;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.CoreMatchers.is;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -152,6 +161,43 @@ class AuthResourceTest {
     }
 
     @Test
+    void grantsCorsPreflightToApprovedDevelopmentOriginWithCredentials() {
+        given()
+                .header("Origin", "http://localhost:4200")
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type")
+                .when().options("/auth/login")
+                .then()
+                .statusCode(200)
+                .header("Access-Control-Allow-Origin", "http://localhost:4200")
+                .header("Access-Control-Allow-Methods", containsString("POST"))
+                .header("Access-Control-Allow-Headers", containsString("content-type"))
+                .header("Access-Control-Allow-Credentials", "true");
+    }
+
+    @Test
+    void rejectsCorsPreflightFromArbitraryOrigin() {
+        assertUnapprovedOriginHasNoCorsGrant("https://sitio-no-aprobado.example");
+    }
+
+    @Test
+    void rejectsCorsPreflightFromPortOrSchemeVariantOfApprovedOrigin() {
+        assertUnapprovedOriginHasNoCorsGrant("http://localhost:4201");
+        assertUnapprovedOriginHasNoCorsGrant("https://localhost:4200");
+    }
+
+    private static void assertUnapprovedOriginHasNoCorsGrant(String origin) {
+        given()
+                .header("Origin", origin)
+                .header("Access-Control-Request-Method", "POST")
+                .header("Access-Control-Request-Headers", "content-type")
+                .when().options("/auth/login")
+                .then()
+                .header("Access-Control-Allow-Origin", nullValue())
+                .header("Access-Control-Allow-Credentials", nullValue());
+    }
+
+    @Test
     void rejectsCredentialsContainingQuoteWhenTheyDoNotMatch() {
         given()
                 .contentType("application/json")
@@ -205,6 +251,94 @@ class AuthResourceTest {
         tokenService.secret = "short-test-key";
 
         assertThrows(IllegalStateException.class, tokenService::validateSecret);
+    }
+
+    @Test
+    void doesNotExposeSigningSecretInLoginResponse() {
+        String response = given()
+                .contentType("application/json")
+                .body("{\"username\":\"student\",\"password\":\"Workshop123!\"}")
+                .when().post("/auth/login")
+                .then()
+                .statusCode(200)
+                .extract()
+                .asString();
+
+        assertFalse(response.contains("test-only-auth-signing-key-do-not-use"));
+    }
+
+    @Test
+    void doesNotLogSigningSecretDuringLogin() {
+        String literal = "test-only-auth-signing-key-do-not-use";
+        List<String> logged = new ArrayList<>();
+        Handler capture = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                logged.add(String.valueOf(record.getMessage()) + " " + record.getThrown());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        Logger root = Logger.getLogger("");
+        root.addHandler(capture);
+        try {
+            given()
+                    .contentType("application/json")
+                    .body("{\"username\":\"student\",\"password\":\"incorrect-password\"}")
+                    .when().post("/auth/login")
+                    .then()
+                    .statusCode(401);
+            given()
+                    .contentType("application/json")
+                    .body("{\"username\":\"student\",\"password\":\"Workshop123!\"}")
+                    .when().post("/auth/login")
+                    .then()
+                    .statusCode(200);
+        } finally {
+            root.removeHandler(capture);
+        }
+
+        assertFalse(logged.stream().anyMatch(entry -> entry.contains(literal)));
+    }
+
+    @Test
+    void keepsTestSigningSecretOnlyInTestProfile() throws Exception {
+        String literal = "test-only-auth-signing-key-do-not-use";
+        List<String> matches = Files.readAllLines(Path.of("src/main/resources/application.properties")).stream()
+                .filter(line -> line.contains(literal))
+                .toList();
+
+        assertEquals(1, matches.size());
+        assertTrue(matches.get(0).startsWith("%test."));
+    }
+
+    @Test
+    void readsNonTestSigningSecretOnlyFromEnvironment() throws Exception {
+        List<String> secretLines = Files.readAllLines(Path.of("src/main/resources/application.properties")).stream()
+                .filter(line -> line.startsWith("auth.token.secret="))
+                .toList();
+
+        assertEquals(List.of("auth.token.secret=${AUTH_TOKEN_SECRET}"), secretLines);
+    }
+
+    @Test
+    void doesNotExposeSigningSecretInUnauthorizedResponse() {
+        String response = given()
+                .contentType("application/json")
+                .body("{\"username\":\"student\",\"password\":\"incorrect-password\"}")
+                .when().post("/auth/login")
+                .then()
+                .statusCode(401)
+                .extract()
+                .asString();
+
+        assertFalse(response.contains("test-only-auth-signing-key-do-not-use"));
     }
 
     @Test

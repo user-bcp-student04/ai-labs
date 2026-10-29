@@ -110,11 +110,12 @@ public class LegacyDatabase {
         }
 
         try (PreparedStatement insertUser = connection.prepareStatement(
-                "INSERT INTO legacy_users(username,password,display_name,role) VALUES (?,?,?,?)")) {
+                "INSERT INTO legacy_users(username,password,display_name,role," + STORAGE_COLUMN + ") VALUES (?,?,?,?,?)")) {
             insertUser.setString(1, username);
             insertUser.setString(2, passwordHasher.hash(password));
             insertUser.setString(3, displayName);
             insertUser.setString(4, role);
+            insertUser.setString(5, STORAGE_HASHED);
             insertUser.executeUpdate();
         }
     }
