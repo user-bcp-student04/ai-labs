@@ -82,12 +82,14 @@ validación y respuesta de negocio:
 ### 2. Autenticación
 
 No requiere un token previo ni el encabezado `Authorization`. Requiere
-`Content-Type: application/json`. La configuración CORS actual permite todos
-los orígenes mediante `/.*/` en
-`auth/src/main/resources/application.properties:4-7`; sin embargo, la
-comprobación local del preflight no devolvió
-`Access-Control-Allow-Credentials: true`. Por tanto, no se debe asumir que
-solicitudes de navegador con credenciales/cookies están habilitadas.
+`Content-Type: application/json`. CORS permite solo orígenes exactos definidos
+por perfil en `auth/src/main/resources/application.properties`: en desarrollo
+`http://localhost:4200`; en producción la lista está vacía y no concede CORS.
+Para el origen aprobado el preflight devuelve `Access-Control-Allow-Origin`,
+`Access-Control-Allow-Methods` con `POST`, `Access-Control-Allow-Headers` con
+`content-type` y `Access-Control-Allow-Credentials: true`. Los demás orígenes
+(incluidos otro puerto o esquema) no reciben estas cabeceras. Solicitudes sin
+cabecera `Origin` no cambian.
 
 ### 3. Request
 
@@ -251,15 +253,14 @@ el error en el servidor y devuelve un cuerpo genérico
   la respuesta (`auth/src/main/java/com/bcp/workshop/auth/PasswordHasher.java:14-56`;
   `AuthService.java:47-55`). La migración de contraseñas heredadas aún tiene un
   caso de formato pendiente identificado en H-AUTH-03; ver `HALLAZGOS.md`.
-- CORS está abierto a cualquier origen y la preflight local no autorizó
-  credenciales de navegador. La lista de orígenes y el uso de cookies requieren
-  una decisión de despliegue; H-AUTH-05 sigue pendiente en `HALLAZGOS.md`.
+- CORS está limitado a la lista exacta por perfil descrita en la sección de
+  login; la lista productiva está vacía y debe ampliarse solo por decisión de
+  despliegue. Ver H-AUTH-05 en `HALLAZGOS.md`.
 
 ## Preguntas abiertas
 
-- ¿Qué orígenes CORS exactos deben permitirse por entorno, y se requieren
-  cookies o credenciales de navegador? La configuración observada actualmente
-  no responde `Access-Control-Allow-Credentials: true`.
+- ¿Qué orígenes CORS deben añadirse a la lista productiva, que hoy está vacía?
+  Las credenciales de navegador solo se habilitan para orígenes aprobados.
 - ¿Qué estado/cuerpo debe considerarse contrato cuando una futura comprobación
   de salud devuelva `DOWN`? Actualmente no hay una comprobación personalizada.
 - ¿Debe estabilizarse/documentarse el cuerpo vacío que Quarkus devuelve para
