@@ -2,6 +2,35 @@
 
 Evidencia de pruebas por componente. Cada sección es de un componente; las de `auth` y `web` se documentan en sus pasos y no se tocan desde la sección `api`.
 
+## web
+
+Componente `web` (Angular). Hallazgo relacionado: H-WEB-01 en `HALLAZGOS.md`; decisión y alcance: `PLAN.md` (sección web). Los endpoints protegidos son `POST /auth/login` y `GET /api/tasks`; no se cambió su contrato.
+
+### Caracterización y ejecución
+
+- Fecha: 2026-11-03. Rama local `day1/prompting`. Comandos ejecutados desde la raíz salvo que se indique lo contrario.
+- Antes de actualizar las dependencias, `python tools/lab.py test web` pasó con 6 pruebas; build exitoso. Esta línea base incluye las pruebas de caracterización agregadas para login y dashboard.
+- Después de actualizar: `npm ci` (`web/`) terminó con exit 0; `python tools/lab.py test web` terminó con exit 0: 6 pruebas pasadas, cobertura y build completados.
+- `npx tsc --noEmit -p tsconfig.json` (`web/`): exit 0.
+- Los builds generan advertencias CommonJS para axios y lodash; no se suprimieron.
+
+### Pruebas añadidas y cobertura
+
+| Archivo | Pruebas | Comportamiento caracterizado |
+|---|---:|---|
+| `web/src/app/login/login.component.spec.ts` | 2 | Mezcla de preferencias; petición de login, persistencia de sesión, navegación y error. |
+| `web/src/app/dashboard/dashboard.component.spec.ts` | 3 | Petición autenticada, exclusión de archivadas, redirección sin token y error de carga. |
+
+Cobertura V8 de la ejecución final: 77,17% global; `login.component.ts` 90%; `dashboard.component.ts` 91,17%; `web/src/testing/test-helpers.ts` 100%. Los porcentajes por componente incluyen archivos completos; no se modificó código de producción.
+
+### Dependencias y riesgos residuales
+
+- `npm ls axios lodash --depth=0` (`web/`): `axios@0.34.0`, `lodash@4.18.1`.
+- Consultas OSV para esas dos versiones: 0 advisories cada una.
+- Baseline de `npm audit`: 43 vulnerabilidades (27 moderate, 10 high, 6 critical). Después de actualizar, `npm audit` terminó con exit 1 y reportó 41 (27 moderate, 8 high, 6 critical); no aparecen advisories para axios ni lodash.
+- `npm audit --omit=dev` terminó con exit 1 y reportó 7 vulnerabilidades runtime (5 moderate, 2 high), en paquetes Angular y `follow-redirects`. Son residuales fuera del alcance aprobado; no se ejecutó `npm audit fix`.
+- No se ejecutaron pruebas manuales ni integración Compose contra `auth`/`api`.
+
 ## api
 
 Componente `api` (FastAPI + SQLite). Contrato de referencia: `docs/ENDPOINTS.md` (sección api). Hallazgos relacionados: `HALLAZGOS.md` (H-API-01 a H-API-14) y registro de ejecuciones de `PLAN.md`.
