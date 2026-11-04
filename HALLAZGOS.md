@@ -74,3 +74,59 @@ Estados permitidos: `Pendiente`, `No encontrado` y los que añada el refactor co
 - Compatibilidad real con `web`/`auth` (Compose): no probada.
 - `docs/ENDPOINTS.md` no existe; el contrato acordado queda pendiente de definir (se conserva el comportamiento observado, con los cambios aprobados en `PLAN.md`).
 - Se creó la rama local `day1/prompting` desde `main` (no existía) para trabajar el Día 1. Los cambios están sin commitear (no se pidió commit).
+
+## web
+
+### Alcance y método de la fase Discovery
+
+- Componente: `web` (Angular 21, standalone). Solo se leyó código de `web/` y los documentos compartidos `RETO.md` (sección web) y `docs/ENDPOINTS.md` (solo para contrastar valores de `status`/`priority`; esa sección no documenta `web`). No se leyó `auth` ni `api`; no se modificó código.
+- Comandos ejecutados (desde `web/`, solo lectura): `npx vitest run --coverage`, `npm audit --audit-level=moderate`, consulta OSV (`https://api.osv.dev/v1/query`, paquete + versión) y un `node -e` con datos ficticios para el orden por prioridad.
+- H-WEB-01 fue aprobado para implementación; H-WEB-02 a H-WEB-05 permanecen `CANDIDATO` y requieren revisión humana. No se crearon issues. Referencias `archivo:línea` desde la raíz.
+
+### H-WEB-01 — Dependencias con advisories: `axios 0.31.0` y `lodash 4.17.21`
+- Estado: Resuelto en el alcance aprobado; revisión humana de cierre pendiente.
+- Evidencia: web/package.json:14-15 (`"axios": "0.31.0"`, `"lodash": "4.17.21"`). OSV: axios 0.31.0 con 23 advisories (p. ej. CVE-2026-44495, CVE-2026-42041, CVE-2026-42035, CVE-2026-42033; correcciones en 0.31.1, 0.32.0, 0.33.0 y 0.34.0 según el advisory) y lodash 4.17.21 con 2 (CVE-2025-13465 corregido en 4.17.23; CVE-2026-4800 corregido en 4.18.0). `npm audit --audit-level=moderate`: 43 vulnerabilidades en total (27 moderate, 10 high, 6 critical), que incluyen dependencias transitivas de desarrollo (p. ej. `zod`), no todas distinguidas por directa/runtime. Uso real: axios en web/src/app/login/login.component.ts:41 y web/src/app/dashboard/dashboard.component.ts:43; lodash solo `merge` en web/src/app/login/login.component.ts:6 y :25.
+- Resultado: versiones fijadas en `axios 0.34.0` y `lodash 4.18.1` en web/package.json y web/package-lock.json. Consulta OSV de ambas versiones: 0 advisories. `npm ls axios lodash --depth=0` confirma las versiones instaladas. `npm audit` pasó de 43 a 41 vulnerabilidades (27 moderate, 8 high, 6 critical); `npm audit --omit=dev` conserva 7 hallazgos (5 moderate, 2 high) en Angular y `follow-redirects`, fuera del alcance aprobado. No se silenció el scanner.
+- Impacto: varios advisories de axios son de gadgets de prototype pollution y cabeceras que podrían aplicar al navegador; otros son del adaptador Node (proxy, streams) y probablemente no aplican al bundle del navegador (a confirmar). lodash se usa para una sola mezcla de preferencias, de modo que podría eliminarse en lugar de actualizarse.
+- Prioridad propuesta: Alta (axios, llamadas de login y con token); Media (lodash y `npm audit` transitivo).
+- Contrato potencialmente afectado: `POST /auth/login` y `GET /api/tasks` (misma forma de petición/respuesta; cambia el cliente HTTP). El salto a axios 1.x puede cambiar el manejo de errores/cabeceras.
+- Validación ejecutada: `npm ci` (exit 0); OSV para las versiones instaladas (0 advisories); `npm ls axios lodash --depth=0`; `python tools/lab.py test web` (6 passed, build exitoso); `npx tsc --noEmit -p tsconfig.json` (exit 0). Cobertura de login 90% y dashboard 91,17%; el agregado es 77,17%. No se probó el flujo contra servicios reales.
+
+### H-WEB-02 — Token y usuario en `localStorage`, sin expiración ni manejo de 401
+- Estado: CANDIDATO
+- Evidencia: web/src/app/login/login.component.ts:47-48 (`workshop_token` y `workshop_user` guardados); web/src/app/dashboard/dashboard.component.ts:36-37 (lectura) y :75-76 (borrado). El dashboard solo comprueba que el token exista (:38-41); un token vencido o rechazado cae en el `catch` (:65-71) y solo muestra un mensaje, sin limpiar la sesión ni redirigir a `/login`. Las rutas no tienen guard (web/src/app/app.routes.ts:4-11). Las claves `workshop_*` están repetidas como literales en 8 sitios (login.component.ts:24, 47-49; dashboard.component.ts:36-37, 75-76).
+- Impacto: cualquier script que corra en el origen (XSS, dependencia comprometida; ver H-WEB-01 y H-WEB-03) puede leer el token. Sesión caducada deja al usuario atascado en un dashboard con error. `user` se parsea sin proteger `JSON.parse` (dashboard:37), así que un valor corrupto rompe `ngOnInit`.
+- Prioridad propuesta: Alta (almacenamiento) / Media (sesión caducada y `JSON.parse`).
+- Contrato potencialmente afectado: respuesta de `POST /auth/login` (`token`, `user`) y cabecera `Authorization: Bearer` hacia `/api/tasks`; cualquier alternativa (cookie HttpOnly, memoria) requiere acordarla con `auth`/`api`, no solo con `web`.
+- Cómo validarlo: prueba con `localStorage` simulado: token inválido/vencido → se espera limpieza y redirección; `workshop_user` corrupto → no debe lanzar; inspección en DevTools > Application tras login. La alternativa de almacenamiento se decide en revisión (ADR) antes de implementar.
+
+### H-WEB-03 — Mensajes dinámicos con `[innerHTML]` que concatenan usuario y texto del backend
+- Estado: CANDIDATO
+- Evidencia: web/src/app/login/login.component.html:39 (`[innerHTML]="message"`); web/src/app/login/login.component.ts:34, 37, 52 y 56 (HTML armado con `<strong>`/`<br>`, y en :56 se concatenan `this.username` y `backendMessage`, este último de `error.response.data.message` o `error.message`).
+- Impacto: se renderiza HTML construido con entrada del usuario y texto del servidor. El sanitizador de Angular elimina scripts y atributos peligrosos, por lo que no se afirma XSS ejecutable (no probado), pero sí es posible inyectar marcado visual (enlaces, formularios, texto engañoso) en el mensaje de error y se depende del sanitizador como única defensa. Además muestra al usuario el mensaje crudo del backend.
+- Prioridad propuesta: Media.
+- Contrato potencialmente afectado: textos de error de `POST /auth/login` mostrados en pantalla (campo `message`); el cambio visual de los mensajes debe revisarse con producto.
+- Cómo validarlo: prueba de componente con `username` = `<img src=x><a href="https://example.invalid">clic</a>` y comprobar si el DOM resultante contiene esos nodos; tras el cambio, esperar texto plano (`{{ message }}`) y mismos textos funcionales.
+
+### H-WEB-04 — Orden por prioridad invertido: la comparación de cadenas deja `HIGH` al final
+- Estado: CANDIDATO
+- Evidencia: web/src/app/dashboard/dashboard.component.ts:54 (`tmp.sort((a, b) => a.priority > b.priority ? -1 : 1)`). Comando con datos ficticios `[LOW, HIGH, MEDIUM]` en `node -e`: resultado `MEDIUM,LOW,HIGH` (orden alfabético descendente). El comparador nunca devuelve 0 (inconsistente para prioridades iguales). `docs/ENDPOINTS.md` documenta `HIGH` como prioridad con significado especial en el resumen.
+- Impacto: si la intención es mostrar lo más urgente primero, la vista muestra las tareas `HIGH` al final. Es una hipótesis de intención: no hay requisito escrito del orden esperado.
+- Prioridad propuesta: Media (defecto funcional visible, bajo riesgo de corrección tras confirmar el orden).
+- Contrato potencialmente afectado: orden de presentación de `GET /api/tasks` en el dashboard (la API lo devuelve ordenado por `id`; el orden de pantalla lo decide `web`). No cambia endpoints.
+- Cómo validarlo: confirmar con el responsable de producto el orden esperado; prueba unitaria de la función de ordenación con `HIGH`, `MEDIUM`, `LOW`, iguales y valores desconocidos.
+
+### H-WEB-05 — Componentes mezclan HTTP, sesión, URLs y navegación; `any` extendido y cobertura 3,65%
+- Estado: CANDIDATO
+- Evidencia: URLs fijas en web/src/app/login/login.component.ts:42 (`http://localhost:8080/auth/login`) y web/src/app/dashboard/dashboard.component.ts:43 (`http://localhost:8000/api/tasks?owner=` + valor sin codificar). Los componentes llaman `axios`, `localStorage` y `Router` directamente (login.component.ts:41-50; dashboard.component.ts:36-45, 74-77). `any` en login.component.ts:16-20, 41 y 54 y dashboard.component.ts:23-27, 43, 54 y `formatTaskLabel(task: any)` (web/src/app/utils/legacy-format.ts:1). `if` anidados en login.component.ts:33-60. Mapa `STATUS_LABELS` con claves `RESUELTO` y `COMPLETED` (dashboard.component.ts:10-11) que `docs/ENDPOINTS.md` no lista (valores documentados: `TODO`, `IN_PROGRESS`, `DONE`, `ARCHIVED`). Hay un parche con `NgZone.run` + `detectChanges` manual (dashboard.component.ts:56-62). Cobertura medida con `npx vitest run --coverage`: 3,65% de líneas y sentencias, 22,22% de ramas; `login.component.ts` y `dashboard.component.ts` en 0%; solo existe 1 prueba (web/src/app/utils/legacy-format.spec.ts:5) y `vitest.config.ts:5` usa entorno `node`.
+- Impacto: no se puede probar ni cambiar el flujo de login/sesión sin tocar los componentes; esto condiciona la corrección segura de H-WEB-01 a H-WEB-04. URLs fijas impiden cambiar de ambiente (en Compose, el navegador debe alcanzar `localhost:8080/8000`). Sin tipos, un cambio de contrato no se detecta en compilación. Cobertura muy por debajo de la meta del 85% del código modificado.
+- Prioridad propuesta: Media (habilitador previo a corregir los demás; escribir pruebas de caracterización primero).
+- Contrato potencialmente afectado: `POST /auth/login`, `GET /api/tasks` (la refactorización debe conservarlos tal cual, según `AGENTS.md`), clave `workshop_*` de `localStorage` y valores de estado mostrados en el dashboard.
+- Cómo validarlo: `python tools/lab.py test web` (o `npx vitest run --coverage` desde `web/`); escribir pruebas de caracterización de login (éxito, sin token, error con mensaje) y dashboard (sin token, éxito, 401, filtrado `ARCHIVED`) con axios simulado antes de extraer un servicio; confirmar con `docs/ENDPOINTS.md` los estados válidos.
+
+### Pendientes y límites de esta evidencia (web)
+
+- No se ejecutó la aplicación ni se probó contra `auth`/`api` reales (Compose no probado); los hallazgos son de lectura estática más las ejecuciones indicadas.
+- Aplicabilidad del resto de advisories de axios que no corresponden al uso examinado en el bundle de navegador no se investigó exhaustivamente.
+- Faltan por revisar (no incluidos para evitar ruido): cabeceras de seguridad/CSP en `web/nginx.conf`, accesibilidad del formulario (etiquetas, `aria-live` del mensaje), `console.error(error)` en login.component.ts:57, y `npm audit` de dependencias solo de desarrollo.
+- H-WEB-02 a H-WEB-05 continúan como candidatos. La revisión humana de cierre de H-WEB-01 queda pendiente. No se crearon issues.

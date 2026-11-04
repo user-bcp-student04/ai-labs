@@ -230,3 +230,15 @@ No ejecutado: Compose y pruebas de integración con `web`/`auth`; ninguna prueba
 - **H-API-13**: el apartado de `README`/Compose no cambia; `uvicorn app.main:app` sigue funcionando.
 - **H-API-14**: las pruebas de corrección de H-API-05 (OSV, `pip check`) se ejecutaron como comandos, no como pruebas pytest.
 - La rama `day1/prompting` no existía y se creó para trabajar (README); los cambios no están commiteados.
+
+## web
+
+### H-WEB-01 — Resolución de advisories en dependencias directas
+
+- **Aprobación:** H-WEB-01 y su spec/impacto fueron aprobados antes de implementar. El alcance es solo axios y lodash; no se creó un issue externo.
+- **Contexto:** axios se usa para `POST /auth/login` y `GET /api/tasks`; lodash `merge` combina preferencias locales con defaults. Las versiones iniciales eran `axios 0.31.0` y `lodash 4.17.21`.
+- **Decisión — axios:** conservar el cliente HTTP y actualizar a `0.34.0`; OSV reporta dos advisories en `0.33.0` y ninguno en `0.34.0`. Se conservan las llamadas existentes sin migrar a Angular `HttpClient`.
+- **Decisión — lodash:** conservar `merge` y actualizar a `4.18.1`. La retirada no se eligió porque no se caracterizó una alternativa equivalente a la mezcla actual; la versión seleccionada no presenta advisories OSV.
+- **Consecuencias:** `web/package.json` y `web/package-lock.json` se actualizan juntos. Se agregan pruebas de caracterización de login y dashboard; no cambia código de producción ni el formato de los endpoints.
+- **Riesgo residual:** `npm audit` aún reporta 41 hallazgos (incluidos 7 de dependencias runtime); se dejan visibles y fuera del alcance. El build mantiene advertencias CommonJS para axios y lodash.
+- **Evidencia:** ver [docs/TESTING.md](./docs/TESTING.md), sección `web`; cierre de H-WEB-01 en [HALLAZGOS.md](./HALLAZGOS.md). No se ejecutó integración real con `auth`/`api`.
