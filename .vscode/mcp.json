@@ -1,0 +1,11 @@
+{
+  "servers": {
+    "incidencias-lab": {
+      "type": "http",
+      "url": "https://bcp-ai-labs.pages.dev/api/lab-mcp",
+      "headers": {
+        "Authorization": "Bearer eyJwdXJwb3NlIjoibGFiLW1jcCIsImNvaG9ydCI6IndvcmtzaG9wLTIwMjYtMTEtczQiLCJ1c2VySWQiOjM0MDg1NjI2MSwibG9naW4iOiJ1c2VyLWJjcC1zdHVkZW50MDQiLCJsYWJJZCI6ImRpYS0wMiIsImV4cCI6MTc5Mzg0NzA3NTQ1MX0.qziOiY2d2ExJwdp3xm-0CNKzEUBwH45H3DCQmA6WhCw"
+      }
+    }
+  }
+}
