@@ -66,6 +66,30 @@ class AuthResourceTest {
                 .body("message", is("Password is required"));
     }
 
+    // Requisito "Los valores de credenciales no alteran la consulta": inyección en usuario.
+    @Test
+    void rejectsSqlInjectionInUsername() {
+        login("' OR '1'='1", "cualquiera")
+                .statusCode(401)
+                .body("token", nullValue());
+    }
+
+    // Requisito "Los valores de credenciales no alteran la consulta": inyección en contraseña.
+    @Test
+    void rejectsSqlInjectionInPassword() {
+        login("student", "' OR '1'='1")
+                .statusCode(401)
+                .body("token", nullValue());
+    }
+
+    // Requisito "Los valores de credenciales no alteran la consulta": comentario SQL.
+    @Test
+    void rejectsSqlCommentInjectionInUsername() {
+        login("student'--", "cualquiera")
+                .statusCode(401)
+                .body("token", nullValue());
+    }
+
     private static ValidatableResponse login(String username, String password) {
         return given()
                 .contentType("application/json")
