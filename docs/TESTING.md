@@ -636,3 +636,58 @@ def test_health_uses_server_configured_url_and_timeout(
         ("GET", CONFIGURED_HEALTH_URL, HEALTH_TIMEOUT_SECONDS)
     ]
 ```
+
+## auth
+
+Componente `auth` (Quarkus + SQLite). Hallazgo H-AUTH-01 (`HALLAZGOS.md`); Issue #23; cambio OpenSpec `auth-login-parameterized-queries`. Rama local `feature/h-auth-01`, sin push. Contrato de `POST /auth/login` sin cambios.
+
+### Entorno
+
+- Comando oficial: `python tools/lab.py test auth` (raíz), que ejecuta `mvn verify` en `auth/`.
+- Quarkus usa el puerto de prueba 8081 por defecto y en esta máquina está ocupado por el servidor MCP local. Se movió con `QUARKUS_HTTP_TEST_PORT=18081` en `auth/.env` (ignorado por git; no es parte del cambio).
+
+### Pruebas (`auth/src/test/java/com/bcp/workshop/auth/AuthResourceTest.java`)
+
+| Prueba | Requisito de la spec que protege | Antes de corregir | Después |
+|---|---|---|---|
+| `logsInWithWorkshopUser` (existente) | Credenciales válidas: `student` | pasa | pasa |
+| `keepsLoginResponseContract` | Credenciales válidas: forma del 200 (`token`, `expiresIn` 3600, `user.*`, `debug`) | pasa | pasa |
+| `logsInWithTrainerUser` | Credenciales válidas: `trainer` | pasa | pasa |
+| `rejectsWrongPassword` | Credenciales inválidas: 401 sin `token` | pasa | pasa |
+| `rejectsUnknownUser` | Credenciales inválidas: 401 sin `token` | pasa | pasa |
+| `rejectsEmptyUsername` | Validación preservada: 400 `Username is required` | pasa | pasa |
+| `rejectsEmptyPassword` | Validación preservada: 400 `Password is required` | pasa | pasa |
+| `rejectsSqlInjectionInUsername` | Valores no alteran la consulta: `' OR '1'='1` en usuario | pasa (regresión) | pasa |
+| `rejectsSqlInjectionInPassword` | Valores no alteran la consulta: `' OR '1'='1` en contraseña | **falla** (200) | pasa |
+| `rejectsSqlCommentInjectionInUsername` | Valores no alteran la consulta: `student'--` | **falla** (200) | pasa |
+
+`rejectsSqlInjectionInUsername` pasa con el código original porque `AND` precede a `OR` y la condición `username='' OR '1'='1' AND password='...'` resulta falsa; se conserva como regresión (ver `design.md`). Las pruebas de 401 no verifican `message`.
+
+### Ejecuciones
+
+| # | Comando | Código | Resultado |
+|---|---|---|---|
+| 1 | `python tools/lab.py test auth` (raíz, puerto 8081 ocupado) | 1 | `Port already bound: 8081`; las pruebas no arrancaron |
+| 2 | `python tools/lab.py test auth` (con `QUARKUS_HTTP_TEST_PORT=18081`, código original, 6 pruebas) | 0 | 6 passed |
+| 3 | Ídem, con las 3 pruebas de inyección, código original | 1 | 9 ejecutadas, 2 fallos (200 en lugar de 401) |
+| 4 | Ídem, código original, 10 pruebas (con `keepsLoginResponseContract`) | 1 | 10 ejecutadas, mismos 2 fallos |
+| 5 | Ídem, con la corrección | 0 | 10 passed, `BUILD SUCCESS` |
+
+### Cobertura (JaCoCo, `auth/target/site/jacoco/jacoco.xml`)
+
+Código modificado: `LegacyDatabase.findByCredentials` y su constante SQL.
+
+| Medida | Cubierto / total | % |
+|---|---|---|
+| Instrucciones | 54 / 57 | 94,7% |
+| Líneas | 11 / 12 | 91,7% |
+| Ramas | 5 / 8 | 62,5% |
+| Clase `LegacyDatabase` (instrucciones) | 92 / 98 | 93,9% |
+
+La línea sin cubrir es el `catch` (`printStackTrace`); no se forzó con cambios de producción. Las ramas sin cubrir son el `catch` y las ramas sintéticas del `try-with-resources` anidado. La meta de 85% se cumple en instrucciones y líneas, no en ramas.
+
+### Pendientes
+
+- Revisión humana del diff antes de cualquier integración.
+- Sin prueba del 500 ni del fallo de acceso a la base de datos (fuera de alcance).
+- Sin integración con `web`/`api` (Compose).

@@ -130,3 +130,20 @@ Estados permitidos: `Pendiente`, `No encontrado` y los que añada el refactor co
 - Aplicabilidad del resto de advisories de axios que no corresponden al uso examinado en el bundle de navegador no se investigó exhaustivamente.
 - Faltan por revisar (no incluidos para evitar ruido): cabeceras de seguridad/CSP en `web/nginx.conf`, accesibilidad del formulario (etiquetas, `aria-live` del mensaje), `console.error(error)` en login.component.ts:57, y `npm audit` de dependencias solo de desarrollo.
 - H-WEB-02 a H-WEB-05 continúan como candidatos. La revisión humana de cierre de H-WEB-01 queda pendiente. No se crearon issues.
+
+## auth
+
+Componente `auth` (Quarkus + SQLite). Issue #23; cambio OpenSpec `auth-login-parameterized-queries`. Rama local `feature/h-auth-01`.
+
+### Matriz de seguimiento
+
+| id | componente | hallazgo | tipo | explicacion | evidencia (archivo:linea) | severidad | estado |
+|---|---|---|---|---|---|---|---|
+| H-AUTH-01 | auth | SQL de login concatenado con `username` y `password` | Vulnerabilidad | `LegacyDatabase.findByCredentials` armaba la consulta concatenando los valores recibidos. Un valor como `student'--` o `' OR '1'='1` en la contraseña alteraba la consulta y autenticaba sin credenciales válidas. | auth/src/main/java/com/bcp/workshop/auth/LegacyDatabase.java:32 (código original, commit `3cd6567`) | alta | Resuelto en la rama `feature/h-auth-01`; revisión humana del diff pendiente. `findByCredentials` usa `PreparedStatement` con parámetros `?` (LegacyDatabase.java:17-18, 34-47). Pruebas: `AuthResourceTest` (10). Antes de la corrección fallaban `rejectsSqlInjectionInPassword` y `rejectsSqlCommentInjectionInUsername` (200 en lugar de 401); detalle en `docs/TESTING.md` (sección auth). |
+
+### Pendientes y límites de esta evidencia (auth)
+
+- Contrato de `POST /auth/login` sin cambios. No está documentado en `docs/ENDPOINTS.md`; el baseline es el comportamiento observado.
+- Fuera de alcance y sin resolver: contraseñas en texto plano, formato y secreto del token (`LegacyTokenUtil`), mensaje 401 con el `username` recibido, campo `debug` y 401 ante fallo de base de datos.
+- No se probó contra `web`/`api` reales (Compose).
+- No se hizo push ni integración.

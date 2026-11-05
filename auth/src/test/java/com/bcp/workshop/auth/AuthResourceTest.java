@@ -25,6 +25,19 @@ class AuthResourceTest {
                 .body("token", notNullValue());
     }
 
+    // Requisito "Credenciales válidas inician sesión": forma completa de la respuesta 200.
+    @Test
+    void keepsLoginResponseContract() {
+        login("student", "Workshop123!")
+                .statusCode(200)
+                .body("token", notNullValue())
+                .body("expiresIn", is(3600))
+                .body("user.username", is("student"))
+                .body("user.displayName", is("Workshop Student"))
+                .body("user.role", is("STUDENT"))
+                .body("debug", is("authenticated-with-legacy-flow"));
+    }
+
     // Requisito "Credenciales válidas inician sesión": segundo usuario sembrado.
     @Test
     void logsInWithTrainerUser() {
