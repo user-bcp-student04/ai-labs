@@ -1,0 +1,128 @@
+<!-- src/app/qr-pagos/qr-pago.component.html -->
+<div class="page">
+  <h1>Pagar con QR de comercio</h1>
+  <p class="hint">
+    Carga la imagen del QR del comercio, revisa el comercio y el importe, y confirma el pago.
+    La imagen se lee en tu navegador y solo se envía el texto del QR.
+  </p>
+
+  <section aria-labelledby="paso-1">
+    <h2 id="paso-1">1. Cargar la imagen del QR</h2>
+    <label for="qr-file">Imagen del código QR</label>
+    <input
+      #fileInput
+      id="qr-file"
+      type="file"
+      accept="image/*"
+      aria-describedby="qr-file-help"
+      [disabled]="busy()"
+      (change)="onFileSelected($event)"
+    />
+    <p id="qr-file-help" class="hint">Formatos de imagen habituales (PNG, JPG…).</p>
+  </section>
+
+  <div class="status" role="status" aria-live="polite">
+    @switch (phase()) {
+      @case ('decoding') { Leyendo la imagen… }
+      @case ('resolving') { Validando el QR… }
+      @case ('submitting') { Confirmando pago… }
+    }
+  </div>
+
+  @if (error(); as g) {
+    <div #alertBox class="alert" role="alert" tabindex="-1">
+      <h2>{{ g.title }}</h2>
+      <p>{{ g.detail }}</p>
+      @if (g.serviceMessage) {
+        <p><strong>Detalle del servicio:</strong> {{ g.serviceMessage }}</p>
+      }
+      @if (g.action === 'choose-another-qr') {
+        <button type="button" (click)="chooseAnother()">Ir a cargar otra imagen</button>
+      }
+      @if (g.action === 'revalidate') {
+        <button type="button" [disabled]="busy()" (click)="revalidate()">Volver a validar el QR</button>
+      }
+    </div>
+  }
+
+  @if (resolved(); as qr) {
+    @if (phase() !== 'success') {
+      <section aria-labelledby="paso-2">
+        <h2 #reviewHeading id="paso-2" tabindex="-1">2. Revisa y confirma</h2>
+        <dl>
+          <dt>Comercio</dt>
+          <dd>{{ qr.merchant.name }}</dd>
+          <dt>Tipo de importe</dt>
+          <dd>{{ qr.amountType === 'fixed' ? 'Importe fijo' : 'Monto abierto (lo defines tú)' }}</dd>
+          @if (qr.amountType === 'fixed') {
+            <dt>Importe</dt>
+            <dd>{{ qr.amount }} {{ qr.currency }}</dd>
+          }
+        </dl>
+
+        <form [formGroup]="form" (ngSubmit)="confirm()" novalidate>
+          @if (qr.amountType === 'open') {
+            <label for="amount">Importe a pagar ({{ qr.currency }})</label>
+            <input
+              id="amount"
+              type="number"
+              inputmode="decimal"
+              step="any"
+              min="0"
+              required
+              formControlName="amount"
+              aria-describedby="amount-help amount-error"
+              [attr.aria-invalid]="amountError() ? 'true' : null"
+            />
+            <p id="amount-help" class="hint">Este QR no trae importe. Debe ser un número mayor que 0.</p>
+            <p id="amount-error" class="field-error" role="alert">{{ amountError() }}</p>
+          } @else if (amountToPay() === null) {
+            <p class="field-error" role="alert">El QR trae un importe no válido; no se puede confirmar.</p>
+          }
+
+          <button type="submit" [disabled]="!canConfirm()" [attr.aria-busy]="phase() === 'submitting'">
+            {{ phase() === 'submitting' ? 'Confirmando pago…' : 'Confirmar pago' }}
+          </button>
+        </form>
+      </section>
+    }
+  }
+
+  @if (phase() === 'success' && payment(); as p) {
+    <section class="ok" aria-labelledby="exito">
+      <h2 #successHeading id="exito" tabindex="-1">Pago creado</h2>
+      <dl>
+        @if (resolved(); as qr) {
+          <dt>Comercio</dt>
+          <dd>{{ qr.merchant.name }}</dd>
+        }
+        @if (paidAmount(); as pa) {
+          <dt>Importe</dt>
+          <dd>{{ pa.amount }} {{ pa.currency }}</dd>
+        }
+        <dt>Referencia</dt>
+        <dd>{{ p.reference }}</dd>
+        <dt>ID de pago</dt>
+        <dd>{{ p.paymentId }}</dd>
+        <dt>Estado</dt>
+        <dd>{{ p.status }}</dd>
+      </dl>
+      <p class="hint">
+        El estado no cambia solo: los eventos del mock se entregan manualmente. Usa «Actualizar estado» para consultarlo.
+      </p>
+      <div class="status" role="status" aria-live="polite">
+        @if (refreshing()) { Consultando estado… } @else if (statusNote()) { {{ statusNote() }} }
+      </div>
+      <button type="button" [disabled]="refreshing()" (click)="refreshStatus()">Actualizar estado</button>
+      <a class="btn-link secondary" routerLink="/historial">Ver historial</a>
+      <button type="button" class="secondary" (click)="startOver()">Pagar otro QR</button>
+    </section>
+
+    @if (historyWarning()) {
+      <div class="warn" role="status">
+        El pago se creó, pero no se pudo guardar en el historial local de este navegador.
+        Anota la referencia {{ p.reference }}.
+      </div>
+    }
+  }
+</div>

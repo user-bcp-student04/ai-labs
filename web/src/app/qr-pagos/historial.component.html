@@ -1,0 +1,121 @@
+<!-- src/app/qr-pagos/historial.component.html -->
+<div class="page">
+  <h1>Historial de pagos QR</h1>
+  <p class="hint">
+    Solo se listan los pagos iniciados desde esta aplicación en este navegador. Los filtros se aplican localmente.
+    Los eventos del mock se entregan manualmente: el estado solo cambia cuando pulsas «Actualizar estado».
+  </p>
+
+  <div class="status" role="status" aria-live="polite">
+    @if (busyKey() !== null) {
+      {{ busyText() }}
+    } @else if (note()) {
+      {{ note() }}
+    }
+  </div>
+
+  @if (error(); as g) {
+    <div #alertBox class="alert" role="alert" tabindex="-1">
+      <h2>{{ g.title }}</h2>
+      <p>{{ g.detail }}</p>
+      @if (g.serviceMessage) {
+        <p><strong>Detalle del servicio:</strong> {{ g.serviceMessage }}</p>
+      }
+    </div>
+  }
+
+  @if (entries().length === 0) {
+    <section aria-labelledby="vacio">
+      <h2 id="vacio">Aún no hay pagos QR iniciados desde esta aplicación</h2>
+      <p>Cuando confirmes un pago con QR aparecerá aquí.</p>
+      <a class="btn-link" routerLink="/pagar-qr">Pagar con QR</a>
+    </section>
+  } @else {
+    <form class="filters" (submit)="$event.preventDefault()" role="search" aria-label="Filtrar historial">
+      <div>
+        <label for="f-query">Buscar por referencia, comercio o ID de pago</label>
+        <input id="f-query" type="search" [value]="query()" (input)="onQuery($event)" />
+      </div>
+      <div>
+        <label for="f-status">Estado</label>
+        <select id="f-status" (change)="onStatus($event)">
+          <option value="" [selected]="statusFilter() === ''">Todos</option>
+          @for (s of statuses(); track s) {
+            <option [value]="s" [selected]="statusFilter() === s">{{ s }}</option>
+          }
+        </select>
+      </div>
+      <button type="button" class="secondary" (click)="clearFilters()">Limpiar filtros</button>
+    </form>
+
+    <p role="status" aria-live="polite">Mostrando {{ filtered().length }} de {{ entries().length }} pagos.</p>
+
+    @if (filtered().length === 0) {
+      <p>Ningún pago coincide con el filtro.</p>
+    } @else {
+      <table>
+        <caption class="sr-only">Pagos QR iniciados desde esta aplicación</caption>
+        <thead>
+          <tr>
+            <th scope="col">Comercio</th>
+            <th scope="col">Referencia</th>
+            <th scope="col">Importe</th>
+            <th scope="col">Estado</th>
+            <th scope="col">Fecha local registrada</th>
+            <th scope="col">Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (e of filtered(); track e.paymentId) {
+            <tr>
+              <td>{{ e.merchantName }}</td>
+              <td>{{ e.reference }}</td>
+              <td>{{ e.amount }} {{ e.currency }}</td>
+              <td>{{ e.status }}</td>
+              <td>
+                <time [attr.datetime]="e.registeredAtLocal">{{ e.registeredAtLocal | date: 'dd/MM/yyyy HH:mm:ss' }}</time>
+                <span class="hint"> (hora de este dispositivo)</span>
+              </td>
+              <td>
+                <button
+                  type="button"
+                  [disabled]="busyKey() !== null"
+                  [attr.aria-label]="'Actualizar estado del pago ' + e.reference"
+                  (click)="refresh(e)"
+                >
+                  Actualizar estado
+                </button>
+                <button
+                  type="button"
+                  class="secondary"
+                  [disabled]="busyKey() !== null"
+                  [attr.aria-label]="'Ver recibo del pago ' + e.reference"
+                  (click)="viewReceipt(e)"
+                >
+                  Ver recibo
+                </button>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    }
+  }
+
+  @if (receipt(); as r) {
+    <section #receiptBox class="ok" aria-labelledby="recibo-titulo" tabindex="-1">
+      <h2 id="recibo-titulo">Recibo del pago {{ r.reference }}</h2>
+      @if (r.fields.length === 0) {
+        <p>El servicio devolvió un recibo sin campos.</p>
+      } @else {
+        <dl>
+          @for (f of r.fields; track f.label) {
+            <dt>{{ f.label }}</dt>
+            <dd>{{ f.value }}</dd>
+          }
+        </dl>
+      }
+      <button type="button" class="secondary" (click)="closeReceipt()">Cerrar recibo</button>
+    </section>
+  }
+</div>
